@@ -353,13 +353,14 @@ func redisDialOpts(redisUsername string, redisPassword string, tlsHandler *TlsHa
 	return dialOpts, nil
 }
 
-func dumpDB(client radix.Client, db *uint8, filter string, nWorkers int, withTTL bool, batchSize int, noscan bool, logger *log.Logger, serializer Serializer, progress chan<- ProgressNotification) error {
+func dumpDB(client radix.Client, db *uint8, skipSelect bool, filter string, nWorkers int, withTTL bool, batchSize int, noscan bool, logger *log.Logger, serializer Serializer, progress chan<- ProgressNotification) error {
 	keyGenerator := scanKeys
 	if noscan {
 		keyGenerator = scanKeysLegacy
 	}
-
-	logger.Print(serializer([]string{"SELECT", fmt.Sprint(*db)}))
+	if !skipSelect {
+		logger.Print(serializer([]string{"SELECT", fmt.Sprint(*db)}))
+	}
 
 	errors := make(chan error)
 	nErrors := 0
@@ -409,10 +410,11 @@ func DumpServer(s Host, db *uint8, filter string, nWorkers int, withTTL bool, ba
 			return radix.Dial(network, addr, dialOpts...)
 		}
 	}
-
+	skipSelectKey := false
 	dbs := []uint8{}
 	if db != AllDBs {
 		dbs = []uint8{*db}
+		skipSelectKey = true
 	} else {
 		client, err := radix.NewPool("tcp", redisURL, nWorkers, radix.PoolConnFunc(getConnFunc(nil)))
 		if err != nil {
@@ -433,7 +435,7 @@ func DumpServer(s Host, db *uint8, filter string, nWorkers int, withTTL bool, ba
 		}
 		defer client.Close()
 
-		if err = dumpDB(client, &db, filter, nWorkers, withTTL, batchSize, noscan, logger, serializer, progress); err != nil {
+		if err = dumpDB(client, &db, skipSelectKey, filter, nWorkers, withTTL, batchSize, noscan, logger, serializer, progress); err != nil {
 			return err
 		}
 	}
